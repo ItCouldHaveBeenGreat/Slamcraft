@@ -38,7 +38,7 @@ header {
 h1 { font-size: 1.125rem; margin: 0 0 5px; }
 header h1 { margin: 0; }
 h2 { font-size: 0.875rem; color: #aebdd1; margin: 20px 0 8px; }
-.panel h2:first-child { margin-top: 0; }
+.left > h2:first-child, .inspector > h2 { margin-top: 0; }
 
 .muted, .field { color: #aebdd1; font-size: 0.875rem; line-height: 1.5; }
 .field { display: flex; justify-content: space-between; gap: 8px; margin: 10px 0 4px; }
@@ -124,12 +124,22 @@ canvas { position: absolute; inset: 0; display: block; touch-action: none; }
     height: auto;
     min-height: 100dvh;
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto clamp(230px, 47dvh, 480px) auto auto auto;
+    grid-template-rows: auto clamp(230px, 47dvh, 480px) auto auto auto auto;
   }
   #viewport, .panel { grid-column: 1; }
-  .panel { padding: 12px; border: 0; border-top: 1px solid #263449; }
-  .left { grid-row: 4; }
-  .right { grid-row: 5; }
+  .panel, .inspector, .object-list {
+    background: #111a29;
+    padding: 12px;
+    border: 0;
+    border-top: 1px solid #263449;
+  }
+  .right { display: contents; }
+  .inspector, .object-list { grid-column: 1; }
+  .inspector { grid-row: 4; }
+  .inspector:has(#powerStats[hidden]) { display: none; }
+  .left { grid-row: 5; }
+  .object-list { grid-row: 6; }
+  .object-list > h2 { margin-top: 0; }
   #palette { grid-template-columns: repeat(auto-fit, minmax(94px, 1fr)); }
   .tool { padding: 6px; gap: 5px; }
 }

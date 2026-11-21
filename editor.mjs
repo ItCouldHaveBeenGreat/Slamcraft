@@ -1,4 +1,4 @@
-import { types } from './catalog.mjs';
+import { types } from './catalog.mjs?v=2';
 import { createView } from './renderer.mjs';
 import { World } from './world.mjs';
 

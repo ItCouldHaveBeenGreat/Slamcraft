@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Slamcraft · Spaceship Grid Lab</title>
-  <link rel="stylesheet" href="./style.css">
+  <link rel="stylesheet" href="./style.css?v=2">
   <script type="importmap">
     {"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"}}
   </script>
@@ -63,20 +63,24 @@
     <div id="toast" role="status" hidden></div>
     <div id="status">Tap to place · Drag to orbit · Pinch to zoom</div>
   </main>
-  <aside class="panel right" aria-label="Inspector">
-    <h2>Inspector</h2>
-    <h1 id="inspectorTitle">No selection</h1>
-    <div id="inspector" class="muted"></div>
-    <div id="powerStats" hidden>
-      <div class="field"><span>Power generation</span><strong id="powerGeneration"></strong></div>
-      <div class="field"><span>Power consumption</span><strong id="powerConsumption"></strong></div>
-    </div>
-    <h2>Objects <span id="count">0</span></h2>
-    <div id="objects"></div>
+  <aside class="panel right" aria-label="Block information">
+    <section class="inspector" aria-labelledby="inspectorTitle">
+      <h2>Inspector</h2>
+      <h1 id="inspectorTitle">No selection</h1>
+      <div id="inspector" class="muted"></div>
+      <div id="powerStats" hidden>
+        <div class="field"><span>Power generation</span><strong id="powerGeneration"></strong></div>
+        <div class="field"><span>Power consumption</span><strong id="powerConsumption"></strong></div>
+      </div>
+    </section>
+    <section class="object-list" aria-labelledby="objectsTitle">
+      <h2 id="objectsTitle">Objects <span id="count">0</span></h2>
+      <div id="objects"></div>
+    </section>
   </aside>
 </div>
 <script type="module">
-  import('./editor.mjs').then(({ start }) => {
+  import('./editor.mjs?v=2').then(({ start }) => {
     start();
     document.getElementById('boot').hidden = true;
   }).catch(error => {
