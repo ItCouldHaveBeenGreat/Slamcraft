@@ -1,23 +1,24 @@
-import { types } from './catalog.mjs?v=2';
-import { createView } from './renderer.mjs';
-import { World } from './world.mjs';
+import { gridLength, types } from './catalog.mjs?v=3';
+import { createView } from './renderer.mjs?v=3';
+import { World } from './world.mjs?v=3';
 
 const historyLimit = 50;
 
 const example = {
   objects: [
-    { type: 'reactor', pos: [3, 0, 4], rot: [0, 0, 0] },
-    { type: 'battery', pos: [6, 0, 4], rot: [0, 0, 0] },
-    { type: 'engine', pos: [8, 0, 4], rot: [0, 0, 0] },
-    { type: 'wire', pos: [5, 0, 4], rot: [0, 0, 0] },
-    { type: 'wire', pos: [5, 1, 4], rot: [0, 0, 0] },
-    { type: 'hull', pos: [4, 2, 4], rot: [0, 0, 0] },
+    { type: 'reactor', pos: [13, 0, 13], rot: [0, 0, 0] },
+    { type: 'wire', pos: [16, 0, 14], rot: [0, 0, 0] },
+    { type: 'engine', pos: [17, 0, 14], rot: [0, 0, 0] },
+    { type: 'hull', pos: [12, 0, 14], rot: [0, 0, 0] },
+    { type: 'engine', pos: [10, 0, 14], rot: [0, 0, 0] },
   ],
 };
 
 export function start() {
   const get = id => document.getElementById(id);
-  const world = new World(12, types);
+  const world = new World(gridLength, types);
+  get('gridSize').textContent = Array(3).fill(gridLength).join(' × ');
+  get('level').max = gridLength - 1;
   const view = createView(get('viewport'), world.length);
   let mode = 'Place';
   let selected = null;
@@ -27,6 +28,66 @@ export function start() {
   let toastTimer;
   const undoStack = [];
   const redoStack = [];
+  const worker = new Worker(new URL('./power-worker.mjs?v=3', import.meta.url), { type: 'module' });
+  let lastLayout = [];
+  let pending = null;
+  let calculating = false;
+  let powerResults = new Map();
+  let powerFailed = false;
+  const format = new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 });
+  const percent = new Intl.NumberFormat(undefined, { style: 'percent', maximumFractionDigits: 1 });
+
+  function updatePowerStats() {
+    const object = world.objects.find(item => item.id === selected);
+    if (!object) return;
+    const type = types[object.type];
+    const result = powerResults.get(selected);
+    const waiting = powerFailed ? 'Unavailable' : 'Calculating…';
+    get('powerGeneration').textContent = `${type.powerGeneration} / tick`;
+    get('powerConsumption').textContent = `${type.powerConsumption} / tick`;
+    get('transmission').textContent = `${type.transmissionCapacity} / tick · ${percent.format(type.transmissionEfficiency)}`;
+    get('powerForwarded').textContent = result ? `${format.format(result.forwarded)} / tick` : waiting;
+    get('consumerPower').hidden = !type.powerConsumption;
+    get('powerReceived').textContent = result ? `${format.format(result.received)} / tick` : waiting;
+    get('operatingOutput').textContent = result?.output != null ? percent.format(result.output) : waiting;
+  }
+
+  function solvePending() {
+    if (!pending || calculating || powerFailed) return;
+    calculating = true;
+    worker.postMessage({ blocks: pending, length: world.length });
+    pending = null;
+  }
+
+  worker.onmessage = ({ data: { results, milliseconds } }) => {
+    calculating = false;
+    if (!pending) {
+      powerResults = new Map(results.map(result => [result.id, result]));
+      get('powerTiming').textContent = `Power calculation: ${format.format(milliseconds)} ms`;
+      updatePowerStats();
+    }
+    solvePending();
+  };
+  worker.onerror = () => {
+    powerFailed = true;
+    get('powerTiming').textContent = 'Power calculation unavailable';
+    updatePowerStats();
+  };
+
+  function requestPower(objects) {
+    if (lastLayout.length === world.objects.length &&
+        lastLayout.every((object, i) => object === world.objects[i])) return;
+    lastLayout = [...world.objects];
+    powerResults.clear();
+    if (!powerFailed) get('powerTiming').textContent = 'Calculating power…';
+    pending = objects;
+    solvePending();
+  }
+
+  function toolSize() {
+    const moving = mode === 'Move' && world.objects.find(object => object.id === selected);
+    return world.size(tool, rotation, moving ? moving.baseSize : undefined);
+  }
 
   function snapshot() {
     // World edits replace component records, so copying the array preserves them.
@@ -87,7 +148,7 @@ export function start() {
       Select: 'Tap a block to inspect · Drag to orbit',
       Move: 'Tap the destination on the build layer',
     }[mode];
-    get('footprint').textContent = world.size(tool, rotation).join(' × ');
+    get('footprint').textContent = toolSize().join(' × ');
     for (const button of get('palette').children) {
       const active = button.dataset.tool === tool && mode !== 'Select';
       button.classList.toggle('active', active);
@@ -122,9 +183,10 @@ export function start() {
   function render() {
     const objects = world.objects.map(object => ({
       ...object,
-      size: world.size(object.type, object.rot),
+      size: world.size(object.type, object.rot, object.baseSize),
       color: types[object.type].color,
     }));
+    requestPower(objects);
     view.draw(objects, selected);
     get('count').textContent = objects.length;
     const objectList = get('objects');
@@ -146,11 +208,7 @@ export function start() {
       `Origin [${object.pos.join(', ')}] · Size ${object.size.join(' × ')} · Turns [${object.rot.join(', ')}]` :
       'Switch to Select and tap a block.';
     get('powerStats').hidden = !object;
-    if (object) {
-      const type = types[object.type];
-      get('powerGeneration').textContent = `${type.powerGeneration} / tick`;
-      get('powerConsumption').textContent = `${type.powerConsumption} / tick`;
-    }
+    updatePowerStats();
     get('selectedActions').hidden = !object || mode === 'Move';
     get('moveSelected').onclick = object ? () => beginMove(object) : null;
     for (const [axis, letter] of [...'XYZ'].entries()) {
@@ -227,7 +285,7 @@ export function start() {
     checkMovement(event);
     if (pointers.size || event.pointerType !== 'mouse' || mode === 'Select') return;
     const pos = view.cellAt(event, level);
-    const size = world.size(tool, rotation);
+    const size = toolSize();
     view.preview(pos, size, pos && world.canPlace(pos, size, mode === 'Move' ? selected : null));
   });
   view.canvas.addEventListener('pointerup', event => {
@@ -263,7 +321,7 @@ export function start() {
   get('layerUp').onclick = () => setLayer(level + 1);
 
   function replaceLayout(data) {
-    editLayout(() => world.load(data));
+    editLayout(() => world.load(data, { legacyLength: 12 }));
     selected = null;
     mode = 'Place';
     setLayer(0);
@@ -273,7 +331,7 @@ export function start() {
   get('demo').onclick = () => {
     if (world.objects.length && !confirm('Replace the current layout with the example?')) return;
     replaceLayout(example);
-    notify('Example loaded');
+    notify('Select either engine to compare wire and hull power.');
   };
   get('clear').onclick = () => {
     if (world.objects.length && confirm('Clear all components?')) replaceLayout({ objects: [] });

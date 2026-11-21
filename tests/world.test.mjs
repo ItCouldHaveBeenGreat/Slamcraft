@@ -13,8 +13,8 @@ test('asymmetric footprints rotate in X, Y, Z order', () => {
 test('placement allows face contact and stacking and rejects collisions and invalid coordinates', () => {
   const world = new World(12, types);
   assert.ok(world.put('reactor', [0, 0, 0], [0, 0, 0]));
-  assert.ok(world.put('hull', [2, 0, 0], [0, 0, 0]));
-  assert.ok(world.put('hull', [0, 2, 0], [0, 0, 0]));
+  assert.ok(world.put('hull', [3, 0, 0], [0, 0, 0]));
+  assert.ok(world.put('hull', [0, 3, 0], [0, 0, 0]));
   assert.equal(world.put('hull', [1, 1, 1], [0, 0, 0]), null);
   assert.equal(world.put('engine', [11, 0, 0], [0, 0, 0]), null);
   assert.equal(world.put('hull', [0.5, 3, 0], [0, 0, 0]), null);
@@ -48,4 +48,18 @@ test('version 1 layouts round-trip, and invalid imports leave the current layout
     assert.throws(() => world.load(data));
     assert.deepEqual(world.serialize(), snapshot);
   }
+});
+
+test('a 12-cell save keeps its old reactor footprint on the enlarged grid', () => {
+  const world = new World(30, types);
+  world.load({ grid: [12, 12, 12], objects: [
+    { type: 'reactor', pos: [0, 0, 0], rot: [0, 0, 0] },
+    { type: 'wire', pos: [2, 0, 0], rot: [0, 0, 0] },
+  ] }, { legacyLength: 12 });
+  const [reactor] = world.objects;
+  assert.deepEqual(reactor.baseSize, [2, 2, 2]);
+  assert.deepEqual(world.put('reactor', [9, 0, 0], reactor.rot, reactor.id).baseSize, [2, 2, 2]);
+  const saved = world.serialize();
+  world.load(saved);
+  assert.deepEqual(world.serialize(), saved);
 });

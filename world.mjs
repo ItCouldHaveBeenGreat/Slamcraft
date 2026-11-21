@@ -20,8 +20,8 @@ export class World {
     this.nextId = 1;
   }
 
-  size(type, rotation) {
-    return orientedSize(this.types[type].size, rotation);
+  size(type, rotation, baseSize = this.types[type].size) {
+    return orientedSize(baseSize, rotation);
   }
 
   canPlace(pos, size, except = null) {
@@ -29,19 +29,20 @@ export class World {
       pos.every((value, axis) => value >= 0 && value + size[axis] <= this.length) &&
       this.objects.every(object => {
         if (object.id === except) return true;
-        const otherSize = this.size(object.type, object.rot);
+        const otherSize = this.size(object.type, object.rot, object.baseSize);
         return pos.some((value, axis) =>
           value + size[axis] <= object.pos[axis] ||
           object.pos[axis] + otherSize[axis] <= value);
       });
   }
 
-  put(type, pos, rot, id = null) {
+  put(type, pos, rot, id = null, baseSize = id === null ? undefined : this.objects.find(object => object.id === id)?.baseSize) {
     if (!Object.hasOwn(this.types, type) || !isTriple(rot) ||
         rot.some(turns => turns < 0 || turns > 3) ||
-        !this.canPlace(pos, this.size(type, rot), id)) return null;
+        !this.canPlace(pos, this.size(type, rot, baseSize), id)) return null;
 
     const object = { id: id ?? this.nextId, type, pos: [...pos], rot: [...rot] };
+    if (baseSize) object.baseSize = [...baseSize];
     if (id === null) {
       this.objects.push(object);
       this.nextId++;
@@ -61,10 +62,11 @@ export class World {
     return { version: 1, grid: Array(3).fill(this.length), objects: this.objects };
   }
 
-  load(data) {
+  load(data, { legacyLength } = {}) {
+    const legacy = isTriple(data?.grid) && data.grid.every(side => side === legacyLength);
     if (!Array.isArray(data?.objects) ||
         (data.version !== undefined && data.version !== 1) ||
-        (data.grid !== undefined && (!isTriple(data.grid) ||
+        (data.grid !== undefined && !legacy && (!isTriple(data.grid) ||
           data.grid.some(side => side !== this.length)))) {
       throw new Error('Unsupported layout format or grid size');
     }
@@ -75,7 +77,13 @@ export class World {
         throw new Error('Invalid component');
       }
       const rotation = raw.rot.map(turns => ((turns % 4) + 4) % 4);
-      if (!imported.put(raw.type, raw.pos, rotation)) {
+      const legacySize = Object.hasOwn(this.types, raw.type) && this.types[raw.type].legacySize;
+      if (raw.baseSize !== undefined && (!legacySize || !isTriple(raw.baseSize) ||
+          raw.baseSize.some((side, axis) => side !== legacySize[axis]))) {
+        throw new Error('Unsupported component footprint');
+      }
+      const baseSize = raw.baseSize ?? (legacy && legacySize ? legacySize : undefined);
+      if (!imported.put(raw.type, raw.pos, rotation, null, baseSize)) {
         throw new Error('Unknown component, occupied cells, or out-of-bounds position');
       }
     }

@@ -15,7 +15,7 @@ export function createView(viewport, length) {
   controls.target.set(center, 1, center);
   controls.enableDamping = true;
   controls.minDistance = 4;
-  controls.maxDistance = 65;
+  controls.maxDistance = length * 5.5;
   controls.maxPolarAngle = Math.PI * 0.49;
   controls.mouseButtons.MIDDLE = THREE.MOUSE.PAN;
   controls.mouseButtons.RIGHT = THREE.MOUSE.ROTATE;

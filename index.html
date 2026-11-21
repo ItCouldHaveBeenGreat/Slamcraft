@@ -43,12 +43,12 @@
     <div class="field"><label for="level">Build layer</label><strong id="levelValue">0</strong></div>
     <div class="layer">
       <button class="btn" id="layerDown" aria-label="Lower build layer">−</button>
-      <input id="level" type="range" min="0" max="11" value="0">
+      <input id="level" type="range" min="0" max="29" value="0">
       <button class="btn" id="layerUp" aria-label="Raise build layer">+</button>
     </div>
     <h2>Layout</h2>
     <div class="buttons">
-      <button class="btn" id="demo">Example</button>
+      <button class="btn" id="demo">Power example</button>
       <button class="btn danger" id="clear">Clear</button>
     </div>
     <div class="buttons" id="file-actions">
@@ -58,7 +58,7 @@
     </div>
   </aside>
   <main id="viewport" aria-label="3D construction grid">
-    <div id="topbar"><div>12 × 12 × 12</div><div id="mode"></div></div>
+    <div id="topbar"><div id="gridSize">30 × 30 × 30</div><div id="mode"></div></div>
     <div id="boot" role="status">Loading the 3D editor…</div>
     <div id="toast" role="status" hidden></div>
     <div id="status">Tap to place · Drag to orbit · Pinch to zoom</div>
@@ -71,16 +71,23 @@
       <div id="powerStats" hidden>
         <div class="field"><span>Power generation</span><strong id="powerGeneration"></strong></div>
         <div class="field"><span>Power consumption</span><strong id="powerConsumption"></strong></div>
+        <div class="field"><span>Transmission limit · efficiency</span><strong id="transmission"></strong></div>
+        <div class="field"><span>Power forwarded</span><strong id="powerForwarded"></strong></div>
+        <div id="consumerPower" hidden>
+          <div class="field"><span>Power received</span><strong id="powerReceived"></strong></div>
+          <div class="field"><span>Operating output</span><strong id="operatingOutput"></strong></div>
+        </div>
       </div>
     </section>
     <section class="object-list" aria-labelledby="objectsTitle">
       <h2 id="objectsTitle">Objects <span id="count">0</span></h2>
+      <div id="powerTiming" class="muted" role="status"></div>
       <div id="objects"></div>
     </section>
   </aside>
 </div>
 <script type="module">
-  import('./editor.mjs?v=2').then(({ start }) => {
+  import('./editor.mjs?v=3').then(({ start }) => {
     start();
     document.getElementById('boot').hidden = true;
   }).catch(error => {
