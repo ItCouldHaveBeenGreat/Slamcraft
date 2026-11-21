@@ -14,7 +14,14 @@ Selected blocks can be moved, rotated, or deleted. **Export JSON** and
 Load **Power example**, then select either engine. The wire-fed engine receives
 30 power per tick and runs at 100%. The hull-fed engine receives 6 and runs at
 20%. Delete a transmitter and undo the deletion to see the engine lose and
-regain power. Imports from the old 12-cell grid retain their existing reactor
+regain power. In the same example, select the battery and tap **Step 1 second**
+to charge it. Delete the reactor to see the battery supply the wire-fed engine.
+Each battery stores up to 200 J, accepts up to 30 W, and delivers up to 20 W.
+At 90% charging efficiency, 30 J of input stores 27 J. Discharge has no storage
+loss. Intermediate blocks still apply their transmission losses. Layout exports
+include stored charge. The inspector shows power rates for the next step.
+
+Imports from the old 12-cell grid retain their existing reactor
 footprints. Newly placed reactors are 3 × 3 × 3.
 
 Face contacts connect automatically. A block's forwarding capacity is shared

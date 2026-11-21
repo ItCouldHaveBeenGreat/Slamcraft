@@ -57,3 +57,50 @@ test('a hull saturates while the engine on a wire continues to draw', () => {
   near(results[4].received, 49);
   near(results[5].received, 0);
 });
+
+test('batteries charge from surplus, apply charging loss, and stop at capacity', () => {
+  const battery = { powerGeneration: 0, powerConsumption: 0, transmissionCapacity: 30,
+    transmissionEfficiency: .9, storageCapacity: 200, chargeRate: 30, dischargeRate: 20 };
+  const layout = [block('reactor', 1, 1), block('battery', 1, 2), block('small', 2, 1)];
+  const step = () => solvePower(layout, 30, { ...types, battery });
+  let [, storage, engine] = step();
+  near(engine.received, 50);
+  near(storage.charge, 30);
+  near(storage.nextEnergy, 27);
+  layout[1].storedEnergy = 199;
+  [, storage] = step();
+  near(storage.charge, 1 / .9);
+  near(storage.nextEnergy, 200);
+  layout[1].storedEnergy = 200;
+  [, storage] = step();
+  near(storage.charge, 0);
+});
+
+test('batteries cover shortfalls at their rate and discharge the last joule without storage loss', () => {
+  const battery = { powerGeneration: 0, powerConsumption: 0, transmissionCapacity: 30,
+    transmissionEfficiency: .9, storageCapacity: 200, chargeRate: 30, dischargeRate: 20 };
+  const layout = [block('battery', 0, 0), block('small', 1, 0)];
+  const step = () => solvePower(layout, 30, { ...types, battery });
+  layout[0].storedEnergy = 23;
+  let [storage, engine] = step();
+  near(engine.received, 20);
+  near(storage.nextEnergy, 3);
+  layout[0].storedEnergy = storage.nextEnergy;
+  [storage, engine] = step();
+  near(engine.received, 3);
+  near(storage.nextEnergy, 0);
+  near(storage.charge, 0);
+});
+
+test('engine supply and charging share the same relay capacity', () => {
+  const battery = { powerGeneration: 0, powerConsumption: 0, transmissionCapacity: 30,
+    transmissionEfficiency: .9, storageCapacity: 200, chargeRate: 30, dischargeRate: 20 };
+  const small = { ...types.small, powerConsumption: 30 };
+  const layout = [block('reactor', 0, 1), block('wire', 1, 1),
+    block('small', 2, 1), block('battery', 1, 2)];
+  const [, wire, engine, storage] = solvePower(layout, 30, { ...types, battery, small });
+  near(engine.received, 30);
+  near(wire.forwarded, 50);
+  near(storage.charge, 19);
+  near(storage.nextEnergy, 17.1);
+});

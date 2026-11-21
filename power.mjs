@@ -62,19 +62,11 @@ class MinHeap {
   }
 }
 
-export function solvePower(blocks, length, types) {
-  const graph = faceNeighbors(blocks, length);
-  const specs = blocks.map(block => types[block.type]);
-  const count = blocks.length;
+function allocate(graph, supply, demands, capacity, efficiency, weights = demands) {
+  const count = graph.length;
   const generators = [];
   const consumers = [];
-  const demands = specs.map((spec, i) =>
-    Math.max(0, Math.min(spec.powerConsumption, blocks[i].effectiveDemand ?? spec.powerConsumption)));
-  const supply = specs.map(spec => spec.powerGeneration);
-  const capacity = specs.map(spec => spec.transmissionCapacity);
-  const efficiency = specs.map(spec => spec.transmissionEfficiency);
   const received = new Float64Array(count);
-  const forwarded = new Float64Array(count);
   const generated = new Float64Array(count);
   for (let i = 0; i < count; i++) {
     if (supply[i] > epsilon) generators.push(i);
@@ -126,13 +118,13 @@ export function solvePower(blocks, length, types) {
       const path = paths[sink];
       const remaining = demands[sink] - received[sink];
       if (!path || remaining <= epsilon) continue;
-      let input = demands[sink];
+      let input = weights[sink];
       for (let relay = path.previous; relay; relay = relay.previous) {
         input /= efficiency[relay.index];
         relayLoad[relay.index] += input;
       }
       sourceLoad[path.source] += input;
-      fraction = Math.min(fraction, remaining / demands[sink]);
+      fraction = Math.min(fraction, remaining / weights[sink]);
       allocations.push(sink);
     }
     if (!allocations.length) break;
@@ -141,19 +133,52 @@ export function solvePower(blocks, length, types) {
       if (relayLoad[i]) fraction = Math.min(fraction, capacity[i] / relayLoad[i]);
     }
     if (!(fraction > 0)) break;
-    for (const sink of allocations) received[sink] += demands[sink] * fraction;
+    for (const sink of allocations) received[sink] += weights[sink] * fraction;
     for (let i = 0; i < count; i++) {
       const draw = sourceLoad[i] * fraction;
       const relay = relayLoad[i] * fraction;
       supply[i] -= draw;
       capacity[i] -= relay;
       generated[i] += draw;
-      forwarded[i] += relay;
     }
   }
 
-  return blocks.map(({ id }, i) => ({
-    id, received: received[i], forwarded: forwarded[i], generated: generated[i],
-    output: specs[i].powerConsumption ? received[i] / specs[i].powerConsumption : null,
-  }));
+  return { received, generated };
+}
+
+// Each solve forecasts one second. Only the simulation step commits the energy.
+export function solvePower(blocks, length, types) {
+  const specs = blocks.map(block => types[block.type]);
+  const graph = faceNeighbors(blocks, length);
+  const demands = specs.map((spec, i) =>
+    Math.max(0, Math.min(spec.powerConsumption, blocks[i].effectiveDemand ?? spec.powerConsumption)));
+  const supply = specs.map(spec => spec.powerGeneration);
+  const capacity = specs.map(spec => spec.transmissionCapacity);
+  const efficiency = specs.map(spec => spec.transmissionEfficiency);
+  const stored = specs.map((spec, i) => spec.storageCapacity ? (blocks[i].storedEnergy ?? 0) : 0);
+  const primary = allocate(graph, supply, demands, capacity, efficiency);
+  const discharge = specs.map((spec, i) => Math.min(spec.dischargeRate ?? 0, stored[i]));
+  const unmet = demands.map((demand, i) => Math.max(0, demand - primary.received[i]));
+  const backup = allocate(graph, discharge, unmet, capacity, efficiency, demands);
+  const charge = specs.map((spec, i) => {
+    if (!spec.storageCapacity || backup.generated[i] > epsilon || efficiency[i] <= 0) return 0;
+    return Math.min(spec.chargeRate, (spec.storageCapacity - stored[i]) / efficiency[i]);
+  });
+  const charging = allocate(graph, supply, charge, capacity, efficiency);
+
+  return blocks.map(({ id }, i) => {
+    const received = primary.received[i] + backup.received[i];
+    const result = {
+      id, received, forwarded: specs[i].transmissionCapacity - capacity[i],
+      generated: primary.generated[i] + charging.generated[i],
+      output: specs[i].powerConsumption ? received / specs[i].powerConsumption : null,
+    };
+    if (specs[i].storageCapacity) {
+      result.charge = charging.received[i];
+      result.discharge = backup.generated[i];
+      result.nextEnergy = Math.max(0, Math.min(specs[i].storageCapacity,
+        stored[i] + result.charge * efficiency[i] - result.discharge));
+    }
+    return result;
+  });
 }

@@ -46,6 +46,11 @@
       <input id="level" type="range" min="0" max="29" value="0">
       <button class="btn" id="layerUp" aria-label="Raise build layer">+</button>
     </div>
+    <h2>Power simulation</h2>
+    <div class="buttons">
+      <button class="btn" id="stepPower" disabled>Step 1 second</button>
+    </div>
+    <div class="field"><span>Elapsed time</span><strong id="simulationTime">0 s</strong></div>
     <h2>Layout</h2>
     <div class="buttons">
       <button class="btn" id="demo">Power example</button>
@@ -73,6 +78,12 @@
         <div class="field"><span>Power consumption</span><strong id="powerConsumption"></strong></div>
         <div class="field"><span>Transmission limit · efficiency</span><strong id="transmission"></strong></div>
         <div class="field"><span>Power forwarded</span><strong id="powerForwarded"></strong></div>
+        <div id="batteryStats" hidden>
+          <div class="field"><span>Stored energy</span><strong id="storedEnergy"></strong></div>
+          <div class="field"><span>Charging input</span><strong id="chargeRate"></strong></div>
+          <div class="field"><span>Discharge output</span><strong id="dischargeRate"></strong></div>
+          <div class="field"><span>Charge efficiency</span><strong id="chargeEfficiency"></strong></div>
+        </div>
         <div id="consumerPower" hidden>
           <div class="field"><span>Power received</span><strong id="powerReceived"></strong></div>
           <div class="field"><span>Operating output</span><strong id="operatingOutput"></strong></div>
@@ -87,7 +98,7 @@
   </aside>
 </div>
 <script type="module">
-  import('./editor.mjs?v=3').then(({ start }) => {
+  import('./editor.mjs?v=4').then(({ start }) => {
     start();
     document.getElementById('boot').hidden = true;
   }).catch(error => {

@@ -1,4 +1,4 @@
-import { gridLength, types } from './catalog.mjs?v=3';
+import { gridLength, types } from './catalog.mjs?v=4';
 import { createView } from './renderer.mjs?v=3';
 import { World } from './world.mjs?v=3';
 
@@ -11,6 +11,7 @@ const example = {
     { type: 'engine', pos: [17, 0, 14], rot: [0, 0, 0] },
     { type: 'hull', pos: [12, 0, 14], rot: [0, 0, 0] },
     { type: 'engine', pos: [10, 0, 14], rot: [0, 0, 0] },
+    { type: 'battery', pos: [16, 1, 14], rot: [0, 0, 0] },
   ],
 };
 
@@ -28,7 +29,10 @@ export function start() {
   let toastTimer;
   const undoStack = [];
   const redoStack = [];
-  const worker = new Worker(new URL('./power-worker.mjs?v=3', import.meta.url), { type: 'module' });
+  const worker = new Worker(new URL('./power-worker.mjs?v=4', import.meta.url), { type: 'module' });
+  let batteryEnergy = new Map();
+  let simulationSeconds = 0;
+  let lastEnergy = batteryEnergy;
   let lastLayout = [];
   let pending = null;
   let calculating = false;
@@ -43,12 +47,20 @@ export function start() {
     const type = types[object.type];
     const result = powerResults.get(selected);
     const waiting = powerFailed ? 'Unavailable' : 'Calculating…';
-    get('powerGeneration').textContent = `${type.powerGeneration} / tick`;
-    get('powerConsumption').textContent = `${type.powerConsumption} / tick`;
-    get('transmission').textContent = `${type.transmissionCapacity} / tick · ${percent.format(type.transmissionEfficiency)}`;
-    get('powerForwarded').textContent = result ? `${format.format(result.forwarded)} / tick` : waiting;
+    get('powerGeneration').textContent = `${type.powerGeneration} W`;
+    get('powerConsumption').textContent = `${type.powerConsumption} W`;
+    get('transmission').textContent = `${type.transmissionCapacity} W · ${percent.format(type.transmissionEfficiency)}`;
+    get('powerForwarded').textContent = result ? `${format.format(result.forwarded)} W` : waiting;
+    get('batteryStats').hidden = !type.storageCapacity;
+    if (type.storageCapacity) {
+      const energy = batteryEnergy.get(selected) ?? 0;
+      get('storedEnergy').textContent = `${format.format(energy)} / ${type.storageCapacity} J`;
+      get('chargeRate').textContent = result ? `${format.format(result.charge)} / ${type.chargeRate} W` : waiting;
+      get('dischargeRate').textContent = result ? `${format.format(result.discharge)} / ${type.dischargeRate} W` : waiting;
+      get('chargeEfficiency').textContent = percent.format(type.transmissionEfficiency);
+    }
     get('consumerPower').hidden = !type.powerConsumption;
-    get('powerReceived').textContent = result ? `${format.format(result.received)} / tick` : waiting;
+    get('powerReceived').textContent = result ? `${format.format(result.received)} W` : waiting;
     get('operatingOutput').textContent = result?.output != null ? percent.format(result.output) : waiting;
   }
 
@@ -67,20 +79,28 @@ export function start() {
       updatePowerStats();
     }
     solvePending();
+    updateStepControl();
   };
   worker.onerror = () => {
     powerFailed = true;
     get('powerTiming').textContent = 'Power calculation unavailable';
     updatePowerStats();
+    updateStepControl();
   };
 
+  function updateStepControl() {
+    get('stepPower').disabled = powerFailed || calculating || !world.objects.length;
+    get('simulationTime').textContent = `${simulationSeconds} s`;
+  }
+
   function requestPower(objects) {
-    if (lastLayout.length === world.objects.length &&
+    if (lastEnergy === batteryEnergy && lastLayout.length === world.objects.length &&
         lastLayout.every((object, i) => object === world.objects[i])) return;
     lastLayout = [...world.objects];
+    lastEnergy = batteryEnergy;
     powerResults.clear();
     if (!powerFailed) get('powerTiming').textContent = 'Calculating power…';
-    pending = objects;
+    pending = objects.map(object => ({ ...object, storedEnergy: batteryEnergy.get(object.id) ?? 0 }));
     solvePending();
   }
 
@@ -91,13 +111,13 @@ export function start() {
 
   function snapshot() {
     // World edits replace component records, so copying the array preserves them.
-    return { objects: [...world.objects], nextId: world.nextId, selected, mode, level };
+    return { objects: [...world.objects], nextId: world.nextId, selected, mode, level, batteryEnergy, simulationSeconds };
   }
 
   function editLayout(change) {
     const before = snapshot();
     const result = change();
-    if (before.nextId !== world.nextId ||
+    if (before.batteryEnergy !== batteryEnergy || before.nextId !== world.nextId ||
         JSON.stringify(before.objects) !== JSON.stringify(world.objects)) {
       undoStack.push(before);
       if (undoStack.length > historyLimit) undoStack.shift();
@@ -112,6 +132,8 @@ export function start() {
     const state = from.pop();
     world.objects = state.objects;
     world.nextId = state.nextId;
+    batteryEnergy = state.batteryEnergy;
+    simulationSeconds = state.simulationSeconds;
     selected = state.selected;
     mode = state.mode === 'Move' ? 'Select' : state.mode;
     setLayer(state.level);
@@ -137,6 +159,7 @@ export function start() {
   }
 
   function renderControls() {
+    updateStepControl();
     get('undo').disabled = !undoStack.length;
     get('redo').disabled = !redoStack.length;
     get('mode').textContent = mode;
@@ -165,7 +188,13 @@ export function start() {
   }
 
   function remove() {
-    editLayout(() => world.remove(selected));
+    editLayout(() => {
+      world.remove(selected);
+      if (batteryEnergy.has(selected)) {
+        batteryEnergy = new Map(batteryEnergy);
+        batteryEnergy.delete(selected);
+      }
+    });
     selected = null;
     mode = 'Select';
     render();
@@ -306,6 +335,22 @@ export function start() {
 
   get('placeMode').onclick = () => { mode = 'Place'; selected = null; render(); };
   get('selectMode').onclick = () => { mode = 'Select'; render(); };
+  get('stepPower').onclick = () => {
+    if (get('stepPower').disabled) return;
+    simulationSeconds++;
+    const next = new Map();
+    for (const result of powerResults.values()) {
+      if (result.nextEnergy > 0) next.set(result.id, result.nextEnergy);
+    }
+    if (next.size !== batteryEnergy.size ||
+        [...next].some(([id, energy]) => energy !== batteryEnergy.get(id))) {
+      batteryEnergy = next;
+      render();
+    } else {
+      updateStepControl();
+    }
+  };
+
   get('cancelMove').onclick = () => choose(selected);
   get('undo').onclick = () => restoreHistory(undoStack, redoStack);
   get('redo').onclick = () => restoreHistory(redoStack, undoStack);
@@ -321,7 +366,21 @@ export function start() {
   get('layerUp').onclick = () => setLayer(level + 1);
 
   function replaceLayout(data) {
-    editLayout(() => world.load(data, { legacyLength: 12 }));
+    const savedEnergy = data?.batteryEnergy;
+    if (savedEnergy !== undefined && (!Array.isArray(savedEnergy) ||
+        !Array.isArray(data.objects) || savedEnergy.length !== data.objects.length ||
+        savedEnergy.some((energy, i) => !Number.isFinite(energy) || energy < 0 ||
+          energy > (types[data.objects[i]?.type]?.storageCapacity ?? 0)))) {
+      throw new Error('Invalid battery energy');
+    }
+    editLayout(() => {
+      world.load(data, { legacyLength: 12 });
+      batteryEnergy = new Map();
+      savedEnergy?.forEach((energy, i) => {
+        if (energy > 0) batteryEnergy.set(world.objects[i].id, energy);
+      });
+      simulationSeconds = 0;
+    });
     selected = null;
     mode = 'Place';
     setLayer(0);
@@ -331,13 +390,15 @@ export function start() {
   get('demo').onclick = () => {
     if (world.objects.length && !confirm('Replace the current layout with the example?')) return;
     replaceLayout(example);
-    notify('Select either engine to compare wire and hull power.');
+    notify('Select the battery and step one second to charge it.');
   };
   get('clear').onclick = () => {
     if (world.objects.length && confirm('Clear all components?')) replaceLayout({ objects: [] });
   };
   get('save').onclick = () => {
-    const url = URL.createObjectURL(new Blob([JSON.stringify(world.serialize(), null, 2)], {
+    const layout = world.serialize();
+    if (batteryEnergy.size) layout.batteryEnergy = world.objects.map(object => batteryEnergy.get(object.id) ?? 0);
+    const url = URL.createObjectURL(new Blob([JSON.stringify(layout, null, 2)], {
       type: 'application/json',
     }));
     const link = document.createElement('a');
