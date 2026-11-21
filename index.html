@@ -18,6 +18,10 @@
       <button class="btn" id="selectMode" aria-pressed="false">Select</button>
       <button class="btn" id="cancelMove" hidden>Cancel move</button>
     </div>
+    <div class="buttons" role="group" aria-label="Edit history">
+      <button class="btn" id="undo" disabled>Undo</button>
+      <button class="btn" id="redo" disabled>Redo</button>
+    </div>
   </header>
   <div id="selectedActions" hidden aria-label="Selected component actions">
     <button class="btn" id="moveSelected">Move</button>
@@ -63,6 +67,10 @@
     <h2>Inspector</h2>
     <h1 id="inspectorTitle">No selection</h1>
     <div id="inspector" class="muted"></div>
+    <div id="powerStats" hidden>
+      <div class="field"><span>Power generation</span><strong id="powerGeneration"></strong></div>
+      <div class="field"><span>Power consumption</span><strong id="powerConsumption"></strong></div>
+    </div>
     <h2>Objects <span id="count">0</span></h2>
     <div id="objects"></div>
   </aside>

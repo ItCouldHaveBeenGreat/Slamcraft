@@ -2,6 +2,8 @@ import { types } from './catalog.mjs';
 import { createView } from './renderer.mjs';
 import { World } from './world.mjs';
 
+const historyLimit = 50;
+
 const example = {
   objects: [
     { type: 'reactor', pos: [3, 0, 4], rot: [0, 0, 0] },
@@ -23,6 +25,37 @@ export function start() {
   let rotation = [0, 0, 0];
   let level = 0;
   let toastTimer;
+  const undoStack = [];
+  const redoStack = [];
+
+  function snapshot() {
+    // World edits replace component records, so copying the array preserves them.
+    return { objects: [...world.objects], nextId: world.nextId, selected, mode, level };
+  }
+
+  function editLayout(change) {
+    const before = snapshot();
+    const result = change();
+    if (before.nextId !== world.nextId ||
+        JSON.stringify(before.objects) !== JSON.stringify(world.objects)) {
+      undoStack.push(before);
+      if (undoStack.length > historyLimit) undoStack.shift();
+      redoStack.length = 0;
+    }
+    return result;
+  }
+
+  function restoreHistory(from, to) {
+    if (!from.length) return;
+    to.push(snapshot());
+    const state = from.pop();
+    world.objects = state.objects;
+    world.nextId = state.nextId;
+    selected = state.selected;
+    mode = state.mode === 'Move' ? 'Select' : state.mode;
+    setLayer(state.level);
+    render();
+  }
 
   function notify(message) {
     const toast = get('toast');
@@ -43,6 +76,8 @@ export function start() {
   }
 
   function renderControls() {
+    get('undo').disabled = !undoStack.length;
+    get('redo').disabled = !redoStack.length;
     get('mode').textContent = mode;
     get('placeMode').setAttribute('aria-pressed', mode === 'Place');
     get('selectMode').setAttribute('aria-pressed', mode === 'Select');
@@ -69,7 +104,7 @@ export function start() {
   }
 
   function remove() {
-    world.remove(selected);
+    editLayout(() => world.remove(selected));
     selected = null;
     mode = 'Select';
     render();
@@ -110,13 +145,19 @@ export function start() {
     inspector.textContent = object ?
       `Origin [${object.pos.join(', ')}] · Size ${object.size.join(' × ')} · Turns [${object.rot.join(', ')}]` :
       'Switch to Select and tap a block.';
+    get('powerStats').hidden = !object;
+    if (object) {
+      const type = types[object.type];
+      get('powerGeneration').textContent = `${type.powerGeneration} / tick`;
+      get('powerConsumption').textContent = `${type.powerConsumption} / tick`;
+    }
     get('selectedActions').hidden = !object || mode === 'Move';
     get('moveSelected').onclick = object ? () => beginMove(object) : null;
     for (const [axis, letter] of [...'XYZ'].entries()) {
       get('sel' + letter).onclick = object ? () => {
         const nextRotation = [...object.rot];
         nextRotation[axis] = (nextRotation[axis] + 1) % 4;
-        if (!world.put(object.type, object.pos, nextRotation, object.id)) {
+        if (!editLayout(() => world.put(object.type, object.pos, nextRotation, object.id))) {
           notify('Rotation blocked by occupied cells or the grid edge');
           return;
         }
@@ -155,7 +196,7 @@ export function start() {
       return;
     }
     const moved = mode === 'Move';
-    const object = world.put(tool, pos, rotation, moved ? selected : null);
+    const object = editLayout(() => world.put(tool, pos, rotation, moved ? selected : null));
     if (!object) {
       notify('Cells occupied or outside the grid');
       return;
@@ -208,6 +249,8 @@ export function start() {
   get('placeMode').onclick = () => { mode = 'Place'; selected = null; render(); };
   get('selectMode').onclick = () => { mode = 'Select'; render(); };
   get('cancelMove').onclick = () => choose(selected);
+  get('undo').onclick = () => restoreHistory(undoStack, redoStack);
+  get('redo').onclick = () => restoreHistory(redoStack, undoStack);
   get('deleteSelected').onclick = remove;
   for (const [axis, letter] of [...'XYZ'].entries()) {
     get('rotate' + letter).onclick = () => {
@@ -220,7 +263,7 @@ export function start() {
   get('layerUp').onclick = () => setLayer(level + 1);
 
   function replaceLayout(data) {
-    world.load(data);
+    editLayout(() => world.load(data));
     selected = null;
     mode = 'Place';
     setLayer(0);
