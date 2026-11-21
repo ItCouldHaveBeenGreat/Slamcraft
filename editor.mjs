@@ -1,0 +1,272 @@
+import { types } from './catalog.mjs';
+import { createView } from './renderer.mjs';
+import { World } from './world.mjs';
+
+const example = {
+  objects: [
+    { type: 'reactor', pos: [3, 0, 4], rot: [0, 0, 0] },
+    { type: 'battery', pos: [6, 0, 4], rot: [0, 0, 0] },
+    { type: 'engine', pos: [8, 0, 4], rot: [0, 0, 0] },
+    { type: 'wire', pos: [5, 0, 4], rot: [0, 0, 0] },
+    { type: 'wire', pos: [5, 1, 4], rot: [0, 0, 0] },
+    { type: 'hull', pos: [4, 2, 4], rot: [0, 0, 0] },
+  ],
+};
+
+export function start() {
+  const get = id => document.getElementById(id);
+  const world = new World(12, types);
+  const view = createView(get('viewport'), world.length);
+  let mode = 'Place';
+  let selected = null;
+  let tool = 'reactor';
+  let rotation = [0, 0, 0];
+  let level = 0;
+  let toastTimer;
+
+  function notify(message) {
+    const toast = get('toast');
+    toast.textContent = message;
+    toast.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { toast.hidden = true; }, 2700);
+  }
+
+  function setLayer(value) {
+    level = Math.max(0, Math.min(world.length - 1, value));
+    get('level').value = level;
+    get('levelValue').textContent = level;
+    get('layerDown').disabled = level === 0;
+    get('layerUp').disabled = level === world.length - 1;
+    view.setLayer(level);
+    view.preview(null);
+  }
+
+  function renderControls() {
+    get('mode').textContent = mode;
+    get('placeMode').setAttribute('aria-pressed', mode === 'Place');
+    get('selectMode').setAttribute('aria-pressed', mode === 'Select');
+    get('cancelMove').hidden = mode !== 'Move';
+    get('status').textContent = {
+      Place: 'Tap the layer to place · Drag to orbit · Pinch to zoom',
+      Select: 'Tap a block to inspect · Drag to orbit',
+      Move: 'Tap the destination on the build layer',
+    }[mode];
+    get('footprint').textContent = world.size(tool, rotation).join(' × ');
+    for (const button of get('palette').children) {
+      const active = button.dataset.tool === tool && mode !== 'Select';
+      button.classList.toggle('active', active);
+      button.setAttribute('aria-pressed', active);
+    }
+    for (const axis of 'XYZ') get('rotate' + axis).disabled = mode === 'Select';
+    view.preview(null);
+  }
+
+  function choose(id) {
+    selected = id;
+    mode = 'Select';
+    render();
+  }
+
+  function remove() {
+    world.remove(selected);
+    selected = null;
+    mode = 'Select';
+    render();
+  }
+
+  function beginMove(object) {
+    tool = object.type;
+    rotation = [...object.rot];
+    setLayer(object.pos[1]);
+    mode = 'Move';
+    render();
+    get('viewport').scrollIntoView({ block: 'nearest' });
+  }
+
+  function render() {
+    const objects = world.objects.map(object => ({
+      ...object,
+      size: world.size(object.type, object.rot),
+      color: types[object.type].color,
+    }));
+    view.draw(objects, selected);
+    get('count').textContent = objects.length;
+    const objectList = get('objects');
+    objectList.replaceChildren();
+    for (const object of objects) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = object.id === selected ? 'object selected' : 'object';
+      button.textContent = `${types[object.type].label} #${object.id} · [${object.pos.join(', ')}]`;
+      button.onclick = () => choose(object.id);
+      objectList.append(button);
+    }
+
+    const object = objects.find(item => item.id === selected);
+    const inspector = get('inspector');
+    get('inspectorTitle').textContent = object ?
+      `${types[object.type].label} #${object.id}` : 'No selection';
+    inspector.textContent = object ?
+      `Origin [${object.pos.join(', ')}] · Size ${object.size.join(' × ')} · Turns [${object.rot.join(', ')}]` :
+      'Switch to Select and tap a block.';
+    get('selectedActions').hidden = !object || mode === 'Move';
+    get('moveSelected').onclick = object ? () => beginMove(object) : null;
+    for (const [axis, letter] of [...'XYZ'].entries()) {
+      get('sel' + letter).onclick = object ? () => {
+        const nextRotation = [...object.rot];
+        nextRotation[axis] = (nextRotation[axis] + 1) % 4;
+        if (!world.put(object.type, object.pos, nextRotation, object.id)) {
+          notify('Rotation blocked by occupied cells or the grid edge');
+          return;
+        }
+        render();
+      } : null;
+    }
+    renderControls();
+  }
+
+  for (const [id, type] of Object.entries(types)) {
+    const button = document.createElement('button');
+    button.className = 'tool';
+    button.dataset.tool = id;
+    const swatch = document.createElement('span');
+    swatch.className = 'swatch';
+    swatch.style.backgroundColor = '#' + type.color.toString(16).padStart(6, '0');
+    button.append(swatch, type.label);
+    button.onclick = () => {
+      tool = id;
+      rotation = [0, 0, 0];
+      selected = null;
+      mode = 'Place';
+      render();
+    };
+    get('palette').append(button);
+  }
+
+  function tap(event) {
+    if (mode === 'Select' || event.shiftKey) {
+      choose(view.pick(event));
+      return;
+    }
+    const pos = view.cellAt(event, level);
+    if (!pos) {
+      notify('Tap inside the active build layer');
+      return;
+    }
+    const moved = mode === 'Move';
+    const object = world.put(tool, pos, rotation, moved ? selected : null);
+    if (!object) {
+      notify('Cells occupied or outside the grid');
+      return;
+    }
+    if (moved) {
+      mode = 'Select';
+      notify('Component moved');
+    }
+    render();
+  }
+
+  const pointers = new Set();
+  let candidate = null;
+  view.canvas.addEventListener('pointerdown', event => {
+    pointers.add(event.pointerId);
+    candidate = pointers.size === 1 && event.button === 0 ? {
+      id: event.pointerId, x: event.clientX, y: event.clientY,
+    } : null;
+    view.preview(null);
+  });
+  function checkMovement(event) {
+    if (candidate?.id === event.pointerId &&
+        Math.hypot(event.clientX - candidate.x, event.clientY - candidate.y) > 7) {
+      candidate = null;
+    }
+  }
+  view.canvas.addEventListener('pointermove', event => {
+    checkMovement(event);
+    if (pointers.size || event.pointerType !== 'mouse' || mode === 'Select') return;
+    const pos = view.cellAt(event, level);
+    const size = world.size(tool, rotation);
+    view.preview(pos, size, pos && world.canPlace(pos, size, mode === 'Move' ? selected : null));
+  });
+  view.canvas.addEventListener('pointerup', event => {
+    checkMovement(event);
+    const activate = candidate?.id === event.pointerId && pointers.size === 1;
+    pointers.delete(event.pointerId);
+    candidate = null;
+    if (activate) tap(event);
+  });
+  for (const eventName of ['pointercancel', 'lostpointercapture']) {
+    view.canvas.addEventListener(eventName, event => {
+      pointers.delete(event.pointerId);
+      if (candidate?.id === event.pointerId) candidate = null;
+    });
+  }
+  view.canvas.addEventListener('pointerleave', () => view.preview(null));
+  view.canvas.addEventListener('contextmenu', event => event.preventDefault());
+
+  get('placeMode').onclick = () => { mode = 'Place'; selected = null; render(); };
+  get('selectMode').onclick = () => { mode = 'Select'; render(); };
+  get('cancelMove').onclick = () => choose(selected);
+  get('deleteSelected').onclick = remove;
+  for (const [axis, letter] of [...'XYZ'].entries()) {
+    get('rotate' + letter).onclick = () => {
+      rotation[axis] = (rotation[axis] + 1) % 4;
+      renderControls();
+    };
+  }
+  get('level').oninput = event => setLayer(Number(event.target.value));
+  get('layerDown').onclick = () => setLayer(level - 1);
+  get('layerUp').onclick = () => setLayer(level + 1);
+
+  function replaceLayout(data) {
+    world.load(data);
+    selected = null;
+    mode = 'Place';
+    setLayer(0);
+    render();
+  }
+
+  get('demo').onclick = () => {
+    if (world.objects.length && !confirm('Replace the current layout with the example?')) return;
+    replaceLayout(example);
+    notify('Example loaded');
+  };
+  get('clear').onclick = () => {
+    if (world.objects.length && confirm('Clear all components?')) replaceLayout({ objects: [] });
+  };
+  get('save').onclick = () => {
+    const url = URL.createObjectURL(new Blob([JSON.stringify(world.serialize(), null, 2)], {
+      type: 'application/json',
+    }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'spaceship-layout.json';
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+  get('load').onclick = () => get('file').click();
+  get('file').onchange = async event => {
+    const [file] = event.target.files;
+    if (!file) return;
+    event.target.value = '';
+    try {
+      replaceLayout(JSON.parse(await file.text()));
+      notify('Layout loaded');
+    } catch (error) {
+      notify('Could not load layout. ' + error.message);
+    }
+  };
+
+  document.addEventListener('keydown', event => {
+    if (event.target.matches('input, button')) return;
+    const key = event.key.toLowerCase();
+    if (key === 'q') setLayer(level - 1);
+    if (key === 'e') setLayer(level + 1);
+    if (key === 'r') get('rotateY').click();
+    if (key === 'escape') choose(null);
+    if (key === 'delete' && selected !== null) remove();
+  });
+  setLayer(0);
+  render();
+}

@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Slamcraft · Spaceship Grid Lab</title>
+  <link rel="stylesheet" href="./style.css">
+  <script type="importmap">
+    {"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"}}
+  </script>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>Slamcraft</h1>
+    <div class="buttons" aria-label="Editor mode">
+      <button class="btn" id="placeMode" aria-pressed="true">Place</button>
+      <button class="btn" id="selectMode" aria-pressed="false">Select</button>
+      <button class="btn" id="cancelMove" hidden>Cancel move</button>
+    </div>
+  </header>
+  <div id="selectedActions" hidden aria-label="Selected component actions">
+    <button class="btn" id="moveSelected">Move</button>
+    <button class="btn" id="selX" aria-label="Rotate selected around X">X</button>
+    <button class="btn" id="selY" aria-label="Rotate selected around Y">Y</button>
+    <button class="btn" id="selZ" aria-label="Rotate selected around Z">Z</button>
+    <button class="btn danger" id="deleteSelected">Delete</button>
+  </div>
+  <aside class="panel left" aria-label="Construction tools">
+    <h2>Components</h2>
+    <div id="palette"></div>
+    <h2>Placement rotation</h2>
+    <div class="buttons">
+      <button class="btn" id="rotateX" aria-label="Rotate placement around X">X</button>
+      <button class="btn" id="rotateY" aria-label="Rotate placement around Y">Y</button>
+      <button class="btn" id="rotateZ" aria-label="Rotate placement around Z">Z</button>
+    </div>
+    <div class="field"><span>Footprint</span><strong id="footprint"></strong></div>
+    <div class="field"><label for="level">Build layer</label><strong id="levelValue">0</strong></div>
+    <div class="layer">
+      <button class="btn" id="layerDown" aria-label="Lower build layer">−</button>
+      <input id="level" type="range" min="0" max="11" value="0">
+      <button class="btn" id="layerUp" aria-label="Raise build layer">+</button>
+    </div>
+    <h2>Layout</h2>
+    <div class="buttons">
+      <button class="btn" id="demo">Example</button>
+      <button class="btn danger" id="clear">Clear</button>
+    </div>
+    <div class="buttons" id="file-actions">
+      <button class="btn" id="save">Export JSON</button>
+      <button class="btn" id="load">Import JSON</button>
+      <input id="file" type="file" accept=".json,application/json" hidden>
+    </div>
+  </aside>
+  <main id="viewport" aria-label="3D construction grid">
+    <div id="topbar"><div>12 × 12 × 12</div><div id="mode"></div></div>
+    <div id="boot" role="status">Loading the 3D editor…</div>
+    <div id="toast" role="status" hidden></div>
+    <div id="status">Tap to place · Drag to orbit · Pinch to zoom</div>
+  </main>
+  <aside class="panel right" aria-label="Inspector">
+    <h2>Inspector</h2>
+    <h1 id="inspectorTitle">No selection</h1>
+    <div id="inspector" class="muted"></div>
+    <h2>Objects <span id="count">0</span></h2>
+    <div id="objects"></div>
+  </aside>
+</div>
+<script type="module">
+  import('./editor.mjs').then(({ start }) => {
+    start();
+    document.getElementById('boot').hidden = true;
+  }).catch(error => {
+    console.error(error);
+    document.getElementById('boot').textContent =
+      'The 3D editor could not start. Check your connection and WebGL support, then reload.';
+  });
+</script>
+</body>
+</html>
