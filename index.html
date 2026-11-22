@@ -68,7 +68,7 @@
     <div id="toast" role="status" hidden></div>
     <div id="status">Tap to place · Drag to orbit · Pinch to zoom</div>
   </main>
-  <aside class="panel right" aria-label="Block information">
+  <aside class="panel right" aria-label="Ship and block information">
     <section class="inspector" aria-labelledby="inspectorTitle">
       <h2>Inspector</h2>
       <h1 id="inspectorTitle">No selection</h1>
@@ -90,15 +90,27 @@
         </div>
       </div>
     </section>
-    <section class="object-list" aria-labelledby="objectsTitle">
+    <div class="object-list">
+      <section aria-labelledby="shipPowerTitle">
+        <h2 id="shipPowerTitle">Ship power</h2>
+        <div class="field"><span>Generation · used / max</span><strong id="shipGeneration"></strong></div>
+        <div class="field"><span>Demand · requested / rated</span><strong id="shipDemand"></strong></div>
+        <div class="field"><span>Delivered / requested</span><strong id="shipDelivery"></strong></div>
+        <div class="field"><span>Stored / capacity</span><strong id="shipStorage"></strong></div>
+        <div class="field"><span>Battery power</span><strong id="shipBatteryFlow"></strong></div>
+        <h2>Steady state</h2>
+        <div class="muted">Reactor-to-consumer power with batteries idle.</div>
+        <div class="field"><span>Transmission loss</span><strong id="shipLoss"></strong></div>
+        <div class="field"><span>Transmission efficiency</span><strong id="shipEfficiency"></strong></div>
+      </section>
       <h2 id="objectsTitle">Objects <span id="count">0</span></h2>
       <div id="powerTiming" class="muted" role="status"></div>
       <div id="objects"></div>
-    </section>
+    </div>
   </aside>
 </div>
 <script type="module">
-  import('./editor.mjs?v=4').then(({ start }) => {
+  import('./editor.mjs?v=5').then(({ start }) => {
     start();
     document.getElementById('boot').hidden = true;
   }).catch(error => {

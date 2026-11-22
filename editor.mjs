@@ -29,14 +29,15 @@ export function start() {
   let toastTimer;
   const undoStack = [];
   const redoStack = [];
-  const worker = new Worker(new URL('./power-worker.mjs?v=4', import.meta.url), { type: 'module' });
+  const worker = new Worker(new URL('./power-worker.mjs?v=5', import.meta.url), { type: 'module' });
   let batteryEnergy = new Map();
   let simulationSeconds = 0;
   let lastEnergy = batteryEnergy;
-  let lastLayout = [];
+  let lastLayout;
   let pending = null;
   let calculating = false;
   let powerResults = new Map();
+  let shipPower;
   let powerFailed = false;
   const format = new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 });
   const percent = new Intl.NumberFormat(undefined, { style: 'percent', maximumFractionDigits: 1 });
@@ -64,6 +65,22 @@ export function start() {
     get('operatingOutput').textContent = result?.output != null ? percent.format(result.output) : waiting;
   }
 
+  function updateShipPower() {
+    const ship = shipPower;
+    const waiting = powerFailed ? 'Unavailable' : 'Calculating…';
+    const rate = (value, limit) => `${format.format(value)} / ${format.format(limit)} W`;
+    get('shipGeneration').textContent = ship ? rate(ship.generated, ship.generationCapacity) : waiting;
+    get('shipDemand').textContent = ship ? rate(ship.demand, ship.ratedDemand) : waiting;
+    get('shipDelivery').textContent = ship ? rate(ship.received, ship.demand) : waiting;
+    get('shipStorage').textContent = ship ?
+      `${format.format(ship.stored)} / ${format.format(ship.storageCapacity)} J` : waiting;
+    get('shipBatteryFlow').textContent = ship ?
+      `${format.format(ship.charge)} W in · ${format.format(ship.discharge)} W out` : waiting;
+    get('shipLoss').textContent = ship ? `${format.format(ship.steadyStateLoss)} W` : waiting;
+    get('shipEfficiency').textContent = ship ?
+      (ship.steadyStateEfficiency === null ? '—' : percent.format(ship.steadyStateEfficiency)) : waiting;
+  }
+
   function solvePending() {
     if (!pending || calculating || powerFailed) return;
     calculating = true;
@@ -71,10 +88,12 @@ export function start() {
     pending = null;
   }
 
-  worker.onmessage = ({ data: { results, milliseconds } }) => {
+  worker.onmessage = ({ data: { results, ship, milliseconds } }) => {
     calculating = false;
     if (!pending) {
       powerResults = new Map(results.map(result => [result.id, result]));
+      shipPower = ship;
+      updateShipPower();
       get('powerTiming').textContent = `Power calculation: ${format.format(milliseconds)} ms`;
       updatePowerStats();
     }
@@ -84,6 +103,7 @@ export function start() {
   worker.onerror = () => {
     powerFailed = true;
     get('powerTiming').textContent = 'Power calculation unavailable';
+    updateShipPower();
     updatePowerStats();
     updateStepControl();
   };
@@ -94,11 +114,13 @@ export function start() {
   }
 
   function requestPower(objects) {
-    if (lastEnergy === batteryEnergy && lastLayout.length === world.objects.length &&
+    if (lastEnergy === batteryEnergy && lastLayout?.length === world.objects.length &&
         lastLayout.every((object, i) => object === world.objects[i])) return;
     lastLayout = [...world.objects];
     lastEnergy = batteryEnergy;
     powerResults.clear();
+    shipPower = undefined;
+    updateShipPower();
     if (!powerFailed) get('powerTiming').textContent = 'Calculating power…';
     pending = objects.map(object => ({ ...object, storedEnergy: batteryEnergy.get(object.id) ?? 0 }));
     solvePending();

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { faceNeighbors, solvePower } from '../power.mjs';
+import { faceNeighbors, solvePower, solveShipPower } from '../power.mjs';
 
 const types = {
   reactor: { powerGeneration: 100, powerConsumption: 0, transmissionCapacity: 30, transmissionEfficiency: .9 },
@@ -103,4 +103,38 @@ test('engine supply and charging share the same relay capacity', () => {
   near(wire.forwarded, 50);
   near(storage.charge, 19);
   near(storage.nextEnergy, 17.1);
+});
+
+test('ship totals distinguish routing loss, unmet demand, idle supply and battery charging', () => {
+  const battery = { powerGeneration: 0, powerConsumption: 0, transmissionCapacity: 30,
+    transmissionEfficiency: .9, storageCapacity: 200, chargeRate: 30, dischargeRate: 20 };
+  const layout = [block('reactor', 1, 1), block('hull', 2, 1), block('small', 3, 1),
+    { ...block('battery', 1, 2), storedEnergy: 10 }];
+  const { ship } = solveShipPower(layout, 30, { ...types, battery });
+  near(ship.generated, 40);
+  near(ship.generationCapacity, 100);
+  near(ship.demand, 50);
+  near(ship.ratedDemand, 50);
+  near(ship.received, 6);
+  near(ship.stored, 10);
+  near(ship.storageCapacity, 200);
+  near(ship.charge, 30);
+  near(ship.discharge, 0);
+  near(ship.steadyStateLoss, 4);
+  near(ship.steadyStateEfficiency, .6);
+});
+
+test('battery-only delivery is visible with no steady-state reactor efficiency', () => {
+  const battery = { powerGeneration: 0, powerConsumption: 0, transmissionCapacity: 30,
+    transmissionEfficiency: .9, storageCapacity: 200, chargeRate: 30, dischargeRate: 20 };
+  const layout = [{ ...block('battery', 0, 0), storedEnergy: 20 },
+    { ...block('small', 1, 0), effectiveDemand: 25 }];
+  const { ship } = solveShipPower(layout, 30, { ...types, battery });
+  near(ship.generated, 0);
+  near(ship.received, 20);
+  near(ship.demand, 25);
+  near(ship.ratedDemand, 50);
+  near(ship.discharge, 20);
+  near(ship.steadyStateLoss, 0);
+  assert.equal(ship.steadyStateEfficiency, null);
 });

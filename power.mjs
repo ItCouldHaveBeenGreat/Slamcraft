@@ -148,6 +148,10 @@ function allocate(graph, supply, demands, capacity, efficiency, weights = demand
 
 // Each solve forecasts one second. Only the simulation step commits the energy.
 export function solvePower(blocks, length, types) {
+  return solveShipPower(blocks, length, types).results;
+}
+
+export function solveShipPower(blocks, length, types) {
   const specs = blocks.map(block => types[block.type]);
   const graph = faceNeighbors(blocks, length);
   const demands = specs.map((spec, i) =>
@@ -166,7 +170,14 @@ export function solvePower(blocks, length, types) {
   });
   const charging = allocate(graph, supply, charge, capacity, efficiency);
 
-  return blocks.map(({ id }, i) => {
+  const ship = {
+    generated: 0, generationCapacity: 0, received: 0, demand: 0, ratedDemand: 0,
+    stored: 0, storageCapacity: 0, charge: 0, discharge: 0,
+    steadyStateLoss: 0, steadyStateEfficiency: null,
+  };
+  let reactorOutput = 0;
+  let reactorDelivery = 0;
+  const results = blocks.map(({ id }, i) => {
     const received = primary.received[i] + backup.received[i];
     const result = {
       id, received, forwarded: specs[i].transmissionCapacity - capacity[i],
@@ -179,6 +190,24 @@ export function solvePower(blocks, length, types) {
       result.nextEnergy = Math.max(0, Math.min(specs[i].storageCapacity,
         stored[i] + result.charge * efficiency[i] - result.discharge));
     }
+    ship.generated += result.generated;
+    ship.generationCapacity += specs[i].powerGeneration;
+    ship.received += received;
+    ship.demand += demands[i];
+    ship.ratedDemand += specs[i].powerConsumption;
+    ship.stored += stored[i];
+    ship.storageCapacity += specs[i].storageCapacity ?? 0;
+    ship.charge += result.charge ?? 0;
+    ship.discharge += result.discharge ?? 0;
+    reactorOutput += primary.generated[i];
+    reactorDelivery += primary.received[i];
     return result;
   });
+
+  // The primary allocation uses only reactors and consumer demand.
+  ship.steadyStateLoss = Math.max(0, reactorOutput - reactorDelivery);
+  if (reactorOutput > epsilon) {
+    ship.steadyStateEfficiency = Math.min(1, reactorDelivery / reactorOutput);
+  }
+  return { results, ship };
 }
